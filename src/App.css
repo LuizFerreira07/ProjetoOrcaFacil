@@ -1,0 +1,27 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f4f6f8;
+  color: #181313;
+}
+.cabeçalho{
+  display: flex;
+  background-color: #251414;
+  justify-content: center;
+  height: 50px;
+}
+.envolvedorIcones{
+  display: flex;
+  justify-content: center;
+  gap: 200px;
+  margin: 13px;
+}
+.icones{
+  color: #f4f6f8;
+  
+}
