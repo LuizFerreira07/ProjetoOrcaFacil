@@ -329,6 +329,10 @@ function RegisterScreen({ onGoToLogin, onRegistered, isDark, onToggleTheme }) {
   );
 }
 
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function NewTransactionScreen({ onCancel, onSave, initialType = "saida", isDark, onToggleTheme }) {
   const [type, setType] = useState(initialType);
   const [amount, setAmount] = useState("");
@@ -336,7 +340,10 @@ function NewTransactionScreen({ onCancel, onSave, initialType = "saida", isDark,
     initialType === "saida" ? SAIDA_CATEGORIES[0].id : ENTRADA_CATEGORIES[0].id
   );
   const [dateOpt, setDateOpt] = useState("hoje");
+  const [customDate, setCustomDate] = useState(todayISO());
   const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const categories = type === "saida" ? SAIDA_CATEGORIES : ENTRADA_CATEGORIES;
 
@@ -355,8 +362,37 @@ function NewTransactionScreen({ onCancel, onSave, initialType = "saida", isDark,
     return parseFloat(amount.replace(/\./g, "").replace(",", ".")) || 0;
   };
 
-  const dateLabel = { hoje: "Hoje", ontem: "Ontem", outra: "Outra data" }[dateOpt];
-  const canSave = numericAmount() > 0;
+  // Data real que vai pro banco (coluna occurred_on)
+  const getOccurredOn = () => {
+    if (dateOpt === "hoje") return todayISO();
+    if (dateOpt === "ontem") {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    }
+    return customDate;
+  };
+
+  const canSave = numericAmount() > 0 && (dateOpt !== "outra" || !!customDate);
+
+  const handleSaveClick = async () => {
+    if (!canSave || saving) return;
+    setSaveError("");
+    setSaving(true);
+    try {
+      await onSave({
+        type,
+        category,
+        amount: numericAmount(),
+        occurredOn: getOccurredOn(),
+        description: description || catById(category).label,
+      });
+    } catch (err) {
+      setSaveError("Não foi possível salvar a transação. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className={`flex flex-col flex-1 h-full w-full min-h-screen md:items-center md:justify-center md:py-12 md:px-6 transition-colors duration-300 ${isDark ? 'md:bg-gray-950' : 'md:bg-[#F7F8F6]'}`}>
@@ -430,6 +466,19 @@ function NewTransactionScreen({ onCancel, onSave, initialType = "saida", isDark,
               <DateChip label="Ontem" active={dateOpt === "ontem"} onClick={() => setDateOpt("ontem")} isDark={isDark} />
               <DateChip label="Outra data" active={dateOpt === "outra"} onClick={() => setDateOpt("outra")} isDark={isDark} />
             </div>
+            {dateOpt === "outra" && (
+              <input
+                type="date"
+                value={customDate}
+                max={todayISO()}
+                onChange={(e) => setCustomDate(e.target.value)}
+                className={`w-full mt-3 border rounded-xl px-4 py-3 text-sm outline-none transition-shadow ${
+                  isDark
+                    ? "bg-gray-900 border-gray-800 text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    : "bg-white border-gray-200 text-gray-900 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                }`}
+              />
+            )}
           </div>
 
           <div>
@@ -450,23 +499,18 @@ function NewTransactionScreen({ onCancel, onSave, initialType = "saida", isDark,
 
         {/* Footer Buttons */}
         <div className="px-5 pb-6 pt-4 space-y-3 md:border-t md:border-gray-100 dark:md:border-gray-800">
+          {saveError && (
+            <p className="text-red-500 text-sm font-medium text-center">{saveError}</p>
+          )}
           <button
-            disabled={!canSave}
-            onClick={() =>
-              canSave &&
-              onSave({
-                type,
-                category,
-                amount: numericAmount(),
-                date: dateLabel,
-                description: description || catById(category).label,
-              })
-            }
-            className={`w-full py-3.5 rounded-2xl font-semibold text-white transition-all active:scale-[0.98] ${
-              canSave ? "bg-emerald-800 hover:bg-emerald-900 shadow-md" : "bg-emerald-800/40 cursor-not-allowed"
+            disabled={!canSave || saving}
+            onClick={handleSaveClick}
+            className={`w-full py-3.5 rounded-2xl font-semibold text-white transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
+              canSave && !saving ? "bg-emerald-800 hover:bg-emerald-900 shadow-md" : "bg-emerald-800/40 cursor-not-allowed"
             }`}
           >
-            Salvar transação
+            {saving && <Loader2 size={18} className="animate-spin" />}
+            {saving ? "Salvando..." : "Salvar transação"}
           </button>
           <button onClick={onCancel} className={`w-full text-center text-sm py-1 transition-colors ${isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-800"}`}>
             Cancelar
@@ -475,6 +519,18 @@ function NewTransactionScreen({ onCancel, onSave, initialType = "saida", isDark,
       </div>
     </div>
   );
+}
+
+function formatDateLabel(isoDate) {
+  if (!isoDate) return "";
+  const d = new Date(`${isoDate}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.getTime() === today.getTime()) return "Hoje";
+  if (d.getTime() === yesterday.getTime()) return "Ontem";
+  return d.toLocaleDateString("pt-BR");
 }
 
 function HomeScreen({ user, onLogout, transactions, onNew, showAll, setShowAll, isDark, onToggleTheme }) {
@@ -736,7 +792,7 @@ function HomeScreen({ user, onLogout, transactions, onNew, showAll, setShowAll, 
                       <div className="flex-1 min-w-0">
                         <p className="text-base font-semibold truncate md:text-lg">{t.description}</p>
                         <p className="text-sm text-gray-400 mt-0.5">
-                          {cat.label} · {t.date}
+                          {cat.label} · {formatDateLabel(t.occurred_on)}
                         </p>
                       </div>
                       <p
@@ -813,8 +869,58 @@ export default function App() {
 
   const currentUser = session?.user ? profileName : null;
 
-  const handleSave = (t) => {
-    setTransactions((prev) => [{ id: Date.now(), ...t }, ...prev]);
+  // Busca as transações do usuário logado direto do banco (tabela public.transactions)
+  useEffect(() => {
+    const user = session?.user;
+    if (!user) {
+      setTransactions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    supabase
+      .from("transactions")
+      .select("*")
+      .order("occurred_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Erro ao carregar transações:", error);
+          return;
+        }
+        setTransactions((data || []).map((row) => ({ ...row, amount: Number(row.amount) })));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  const handleSave = async (t) => {
+    const user = session?.user;
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("transactions")
+      .insert({
+        user_id: user.id,
+        type: t.type,
+        category: t.category,
+        amount: t.amount,
+        description: t.description,
+        occurred_on: t.occurredOn,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao salvar transação:", error);
+      throw error;
+    }
+
+    setTransactions((prev) => [{ ...data, amount: Number(data.amount) }, ...prev]);
     setScreen("home");
   };
 
